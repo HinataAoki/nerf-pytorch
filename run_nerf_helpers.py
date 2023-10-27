@@ -90,7 +90,7 @@ class NeRF(nn.Module):
         ### Implementation according to the paper
         # self.views_linears = nn.ModuleList(
         #     [nn.Linear(input_ch_views + W, W//2)] + [nn.Linear(W//2, W//2) for i in range(D//2)])
-        
+
         if use_viewdirs:
             self.feature_linear = nn.Linear(W, W)
             self.alpha_linear = nn.Linear(W, 1)
@@ -111,7 +111,7 @@ class NeRF(nn.Module):
             alpha = self.alpha_linear(h)
             feature = self.feature_linear(h)
             h = torch.cat([feature, input_views], -1)
-        
+
             for i, l in enumerate(self.views_linears):
                 h = self.views_linears[i](h)
                 h = F.relu(h)
@@ -121,7 +121,7 @@ class NeRF(nn.Module):
         else:
             outputs = self.output_linear(h)
 
-        return outputs    
+        return outputs
 
     def load_weights_from_keras(self, weights):
         assert self.use_viewdirs, "Not implemented if use_viewdirs=False"
@@ -196,15 +196,15 @@ class MultipleModels(nn.Module):
                                                     use_viewdirs=use_viewdirs
                                                     ) for _ in range(self.n_models)])
         
-        self.NeRF = self.get_model(D=D, W=W, input_ch=input_ch,
-                                   output_ch=output_ch, skips=skips,
-                                   input_ch_views=input_ch_views,
-                                   use_viewdirs=use_viewdirs)
+        # self.NeRF = self.get_model(D=D, W=W, input_ch=input_ch,
+        #                            output_ch=output_ch, skips=skips,
+        #                            input_ch_views=input_ch_views,
+        #                            use_viewdirs=use_viewdirs)
 
     def get_cluster_map(self):
         img = cv2.imread(self.heights_img_path, 0)
         self.resolution = img.shape[0]
-        ind = np.where(img < self.threshold)
+        ind = np.where(img > self.threshold)
         X = np.array([ind[0], ind[1]]).T
         km = KMeans(n_clusters=self.n_models - 1,
                     init='random',
@@ -213,7 +213,7 @@ class MultipleModels(nn.Module):
                     tol=1e-04,
                     random_state=0)
         y_km = km.fit_predict(X)
-        img = np.where(img < self.threshold, img, 0)
+        img = np.where(img > self.threshold, img, 0)
         np.put(img, (ind[0]) * img.shape[0] + ind[1], y_km + 1)
         return torch.from_numpy(img)
 
@@ -221,7 +221,7 @@ class MultipleModels(nn.Module):
         pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None]
         x, y = pts[..., 1].to(torch.long), pts[..., 0].to(torch.long)
         batch_indexes = self.heights_img[x, y]
-        print("batch indexs: ", batch_indexes.shape)
+        # print("batch indexs: ", batch_indexes.shape)
         return None
 
     def get_model(self, D, W, input_ch, output_ch, skips,
@@ -237,13 +237,16 @@ class MultipleModels(nn.Module):
 
     def get_indexes(self, inputs_flat):
         # inputs_flat = inputs_flat.cpu()
-        x, y = (inputs_flat[:, 1] + self.virtual_size) / \
-               (self.virtual_size * 2) * self.resolution, \
-               (inputs_flat[:, 0] + self.virtual_size) / \
-               (self.virtual_size * 2) * self.resolution
+        x, y = (inputs_flat[:, 1] + self.virtual_size) / (self.virtual_size * 2) * self.resolution, \
+               (inputs_flat[:, 0] + self.virtual_size) / (self.virtual_size * 2) * self.resolution
+        x = torch.where(x >= self.resolution, self.resolution - 1, x)
+        x = torch.where(x <= 0, 0, x)
+        y = torch.where(y >= self.resolution, self.resolution - 1, y)
+        y = torch.where(y <= 0, 0, y)
         x, y = x.to(torch.long), y.to(torch.long)
         # image = self.heights_img.cpu()
         batch_indexes = self.heights_img[x, y]
+        # batch_indexes = self.heights_img[y, x]
         return batch_indexes
 
     def forward(self, inputs_flat, input_dirs_flat):
@@ -260,18 +263,26 @@ class MultipleModels(nn.Module):
 
         batch_indexes = self.get_indexes(inputs_flat)
 
+        # print("unique batch_indexes: ", torch.unique(batch_indexes))
+
         outputs = None
-        for i in range(self.n_models):
-            model_indexes = torch.where(batch_indexes == i, i, 0.).unsqueeze(0)
-            model_indexes = torch.cat([model_indexes for _ in range(4)], 0).T
-            # print(self.models[i])
-            model = self.models[i]
-            tmp_outputs = model(embedded)
-            tmp_outputs = torch.mul(model_indexes, tmp_outputs)
-            if outputs is None:
-                outputs = tmp_outputs
-            else:
-                outputs += tmp_outputs
+        # for i in range(self.n_models):
+        # for i in [0, 4, 9, 12]:
+        #     model_indexes = torch.where(batch_indexes == i, 1, 0.).unsqueeze(0)
+        #     model_indexes = torch.cat([model_indexes for _ in range(4)], 0).T
+        #     model = self.models[i]
+        #     tmp_outputs = model(embedded)
+        #     tmp_outputs = torch.mul(model_indexes, tmp_outputs)
+        #     if outputs is None:
+        #         outputs = tmp_outputs
+        #     else:
+        #         outputs += tmp_outputs
+        i = 0
+        model_indexes = torch.where(batch_indexes == i, 1, 0.).unsqueeze(0)
+        model_indexes = torch.cat([model_indexes for _ in range(4)], 0).T
+        model = self.models[i]
+        tmp_outputs = model(embedded)
+        outputs = torch.mul(model_indexes, tmp_outputs)
         return outputs
 
 
@@ -405,7 +416,6 @@ class AdaptiveIntervalSampling:
         pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None]
         x, y = pts[..., 1].to(torch.long), pts[..., 0].to(torch.long)
         batch_indexes = self.heights_img[x, y]
-        # print("batch indexs: ", batch_indexes.shape)
 
         adaptive_z_vals = None
 

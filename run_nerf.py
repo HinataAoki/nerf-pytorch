@@ -334,7 +334,7 @@ def render_rays(ray_batch,
                 white_bkgd=False,
                 raw_noise_std=0.,
                 verbose=False,
-                use_sampling_with_height=True,
+                use_sampling_with_height=False,
                 pytest=False):
     """Volumetric rendering.
     Args:
@@ -422,7 +422,7 @@ def render_rays(ray_batch,
         z_samples = z_samples.detach()
 
         z_vals, _ = torch.sort(torch.cat([z_vals, z_samples], -1), -1)
-        pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None] # [N_rays, N_samples + N_importance, 3]
+        pts = rays_o[..., None, :] + rays_d[..., None, :] * z_vals[..., :, None]  # [N_rays, N_samples + N_importance, 3]
 
         run_fn = network_fn if network_fine is None else network_fine
 #         raw = run_network(pts, fn=run_fn)
@@ -604,7 +604,7 @@ def train():
         if args.no_ndc:
             near = np.ndarray.min(bds) * .9
             far = np.ndarray.max(bds) * 1.
-            
+
         else:
             near = 0.
             far = 1.
@@ -845,7 +845,7 @@ def train():
             param_group['lr'] = new_lrate
         ################################
 
-        dt = time.time()-time0
+        dt = time.time() - time0
         # print(f"Step: {global_step}, Loss: {loss}, Time: {dt}")
         #####           end            #####
 
@@ -898,9 +898,9 @@ def train():
     
         if i % args.i_print == 0:
             tqdm.write(f"[TRAIN] Iter: {i} Loss: {loss.item()}  PSNR: {psnr.item()}")
-        """
-            print(expname, i, psnr.numpy(), loss.numpy(), global_step.numpy())
-            print('iter time {:.05f}'.format(dt))
+
+            # print(expname, i, psnr.numpy(), loss.numpy(), global_step.numpy())
+            # print('iter time {:.05f}'.format(dt))
 
             writer.add_scalar('loss', loss.item(), global_step=i)
             writer.add_scalar('psnr', psnr.item(), global_step=i)
@@ -918,14 +918,15 @@ def train():
                                                     c2w=pose,
                                                     **render_kwargs_test)
                 psnr = mse2psnr(img2mse(rgb, target))
-                writer.add_image('rgb', to8b(rgb.cpu()).view(3, W, H), global_step=i)
+                writer.add_image('rgb', np.reshape(to8b(rgb.detach().cpu().numpy()), (-1, H, W)), global_step=i)
+                writer.add_image('target', np.reshape(target.detach().cpu().numpy(), (-1, H, W)), global_step=i)
 
                 writer.add_scalar('psnr_holdout', psnr.item(), global_step=i)
-                writer.add_image('rgb_holdout', target.view(3, H, W), global_step=i)
+                # writer.add_image('rgb_holdout', target, global_step=i)
 
-                if args.N_importance > 0:
-                    writer.add_image('rgb0', to8b(extras['rgb0']).view(3, H, W), global_step=i)
-        """
+                # if args.N_importance > 0:
+                #     writer.add_image('rgb0', to8b(extras['rgb0']), global_step=i)
+
 
         global_step += 1
 
