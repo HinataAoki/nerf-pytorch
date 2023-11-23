@@ -1,0 +1,28 @@
+expname = your_exp_name
+basedir = ./logs/
+datadir = path/to/your/dataset/folder
+dataset_type = blender
+
+use_viewdirs = True
+use_adaptive_interval_sampling=True
+
+N_samples = 64
+N_rand = 1024
+
+precrop_iters = 500
+precrop_frac = 0.5
+
+perturb = 0
+
+i_print = 1000
+i_img = 10000
+i_video = 40000
+i_weight = 40000
+i_test = 4000
+
+N_iters = 200000
+
+height_img_path = /path/to/your/heightmap
+object_height = highest hight of your dataset
+n_models = 10
+virtual_size = size of your height map
